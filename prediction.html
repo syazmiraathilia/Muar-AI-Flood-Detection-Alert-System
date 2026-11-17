@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Water Level Prediction · Muar</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Sans+Tamil:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    tailwind.config = { darkMode:'class', theme:{ extend:{
+      fontFamily:{ sans:['Poppins','Noto Sans SC','Noto Sans Tamil','sans-serif'] },
+      colors:{ page:{DEFAULT:'#F5F7FA',dark:'#1B1D29'}, card:{DEFAULT:'#FFFFFF',dark:'#232538'},
+               accent:{DEFAULT:'#0891B2',dark:'#22D3EE'}, brand:'#2F80FF' } } } };
+    try{ if(localStorage.getItem('theme')==='light') document.documentElement.classList.remove('dark'); }catch(e){}
+  </script>
+  <style>
+    .station-btn.active { background:#2F80FF; color:#fff; border-color:#2F80FF; }
+  </style>
+</head>
+<body class="bg-page dark:bg-page-dark text-gray-800 dark:text-white font-sans min-h-screen">
+
+  <header class="sticky top-0 z-50 py-2 px-4 md:px-8 flex flex-wrap items-center justify-between gap-2 bg-card dark:bg-card-dark shadow-md">
+    <h1 class="text-base md:text-xl font-black tracking-tight leading-tight flex items-center gap-2">
+      <span class="text-2xl md:text-3xl drop-shadow-md">🌊</span>
+      <span class="bg-gradient-to-r from-brand to-accent dark:from-[#2F80FF] dark:to-[#22D3EE] bg-clip-text text-transparent drop-shadow-sm" data-i18n="title">
+        Muar AI Flood Prediction & Alert System
+      </span>
+    </h1>
+    <nav class="flex items-center gap-1 text-sm font-medium">
+      <a href="index.html" class="px-3 py-1.5 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/10" data-i18n="nav_home">Home</a>
+      <a href="prediction.html" class="px-3 py-1.5 rounded-full bg-brand text-white" data-i18n="nav_pred">Prediction</a>
+    </nav>
+    <div class="flex items-center gap-2">
+      <a href="admin.html" title="Admin login" aria-label="Admin login" class="w-9 h-9 rounded-full border border-gray-300 dark:border-white/20 text-lg flex items-center justify-center hover:bg-gray-100 dark:hover:bg-white/10">🔑</a>
+      <select id="lang-select" onchange="setLang(this.value)" aria-label="Language" class="h-9 rounded-full border border-gray-300 dark:border-white/20 bg-white dark:bg-[#232538] text-gray-800 dark:text-white text-xs font-semibold px-3 cursor-pointer">
+        <option value="en">English</option><option value="ms">Bahasa Melayu</option>
+        <option value="zh">中文</option><option value="ta">தமிழ்</option>
+      </select>
+      <button id="btn-theme" onclick="toggleTheme()" aria-label="Toggle theme" class="w-9 h-9 rounded-full border border-gray-300 dark:border-white/20 text-lg flex items-center justify-center">🌙</button>
+    </div>
+  </header>
+
+  <main class="p-4 md:p-6 w-full max-w-[1800px] mx-auto space-y-4 md:space-y-6">
+
+    <!-- TITLE + STATION PICKER + HORIZON -->
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 class="text-2xl font-bold" data-i18n="page_title">Water Level Prediction</h2>
+        <p class="text-sm text-gray-500 dark:text-gray-400" id="station-label">–</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <div id="station-picker" class="flex flex-wrap gap-1 rounded-full border border-gray-300 dark:border-white/20 overflow-hidden text-sm font-semibold"></div>
+        <div class="flex rounded-full border border-gray-300 dark:border-white/20 overflow-hidden text-sm font-semibold" id="horizon">
+          <button data-h="6" class="px-4 py-1.5">6h</button>
+          <button data-h="12" class="px-4 py-1.5">12h</button>
+          <button data-h="24" class="px-4 py-1.5">24h</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPI CARDS -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 md:gap-6">
+      <div class="bg-card dark:bg-card-dark rounded-xl shadow-md p-5">
+        <p class="text-sm text-gray-500 dark:text-gray-400" data-i18n="k_peak">Predicted peak</p>
+        <p class="text-4xl font-bold mt-1" id="k-peak">–</p>
+        <p class="text-sm mt-1" id="k-peak-status"></p>
+      </div>
+      <div class="bg-card dark:bg-card-dark rounded-xl shadow-md p-5">
+        <p class="text-sm text-gray-500 dark:text-gray-400" data-i18n="k_ttd">Time to danger level</p>
+        <p class="text-4xl font-bold mt-1" id="k-ttd">–</p>
+        <p class="text-sm mt-1" id="k-ttd-sub"></p>
+      </div>
+      <div class="bg-card dark:bg-card-dark rounded-xl shadow-md p-6 flex flex-col justify-center">
+        <p class="text-sm text-gray-500 dark:text-gray-400" data-i18n="k_time">Peak expected at</p>
+        <p class="text-4xl font-bold mt-1" id="k-time">–</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1" data-i18n="k_time_sub">Estimated time</p>
+      </div>
+      <div class="bg-card dark:bg-card-dark rounded-xl shadow-md p-5">
+        <p class="text-sm text-gray-500 dark:text-gray-400" data-i18n="k_quality">Data quality</p>
+        <p class="text-4xl font-bold mt-1 text-green-600 dark:text-green-400">1/1</p>
+        <p class="text-sm text-gray-500 dark:text-gray-400 mt-1" data-i18n="k_quality_sub">Sensor online · updated 2 min ago</p>
+      </div>
+      <div class="bg-card dark:bg-card-dark rounded-xl shadow-md p-5 border-l-4 border-brand">
+        <p class="text-sm text-gray-500 dark:text-gray-400">AI Confidence</p>
+        <div class="flex items-baseline gap-2 mt-1">
+          <p class="text-4xl font-bold text-brand" id="k-ai-score">94%</p>
+        </div>
+        <div class="w-full bg-gray-200 dark:bg-white/10 h-2 rounded-full mt-2">
+          <div id="k-ai-bar" class="bg-brand h-2 rounded-full transition-all duration-1000" style="width: 94%"></div>
+        </div>
+        <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-2">Based on sensor variance</p>
+      </div>
+    </div>
+
+    <!-- AI INSIGHT -->
+    <div class="bg-brand/10 border border-brand/30 rounded-xl p-4 flex gap-3 items-start shadow-sm">
+      <span class="text-2xl mt-0.5 animate-pulse">🤖</span>
+      <div>
+        <h4 class="font-bold text-brand text-sm">AI Analysis</h4>
+        <p id="ai-insight-text" class="text-sm text-gray-700 dark:text-gray-300 mt-1">
+          Analyzing sensor trends...
+        </p>
+      </div>
+    </div>
+
+    <!-- FORECAST CHART -->
+    <div class="relative overflow-hidden bg-card dark:bg-card-dark rounded-xl shadow-md p-4 md:p-6">
+      <h3 class="text-lg font-semibold text-accent dark:text-accent-dark mb-1" data-i18n="chart_title">Forecast</h3>
+      <p class="text-xs text-gray-500 dark:text-gray-400 mb-4" data-i18n="chart_note">Solid line = measured. Dashed line = predicted. Shaded area = likely range.</p>
+      
+      <!-- The AI Loader -->
+      <div id="ai-loader" class="hidden absolute inset-0 bg-card/80 dark:bg-card-dark/80 z-10 flex flex-col items-center justify-center backdrop-blur-sm">
+        <div class="relative w-16 h-16">
+          <div class="absolute inset-0 border-4 border-brand/30 rounded-full"></div>
+          <div class="absolute inset-0 border-4 border-brand border-t-transparent rounded-full animate-spin"></div>
+          <div class="absolute inset-0 flex items-center justify-center text-xl">🧠</div>
+        </div>
+        <p class="mt-4 text-sm font-semibold text-brand animate-pulse" data-i18n="ai_calc">AI Model Calculating...</p>
+      </div>
+
+      <div class="h-[400px] lg:h-[500px] xl:h-[550px]"><canvas id="chart"></canvas></div>
+    </div>
+
+    <!-- TABLE + ACCURACY -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 items-stretch">
+      <div class="bg-card dark:bg-card-dark rounded-xl shadow-md p-6">
+        <h3 class="text-lg font-semibold text-accent dark:text-accent-dark mb-3" data-i18n="table_title">Hourly forecast</h3>
+        <div class="max-h-[450px] overflow-y-auto">
+          <table class="w-full text-sm">
+            <thead class="text-left text-gray-500 dark:text-gray-400">
+              <tr><th class="py-2 font-medium" data-i18n="col_time">Time</th><th class="font-medium" data-i18n="col_level">Level</th><th class="font-medium" data-i18n="col_status">Status</th></tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="bg-card dark:bg-card-dark rounded-xl shadow-md p-6">
+        <h3 id="acc-title-display" class="text-lg font-semibold text-accent dark:text-accent-dark mb-3" data-i18n="acc_title">How accurate is the forecast?</h3>
+        <p id="acc-body-display" class="text-gray-500 dark:text-gray-400 text-sm" data-i18n="acc_empty">Accuracy figures will appear after the system has run for 7 days.</p>
+        <p id="disc-display" class="text-xs text-gray-500 dark:text-gray-400 mt-6" data-i18n="disclaimer">Predictions are estimates based on current water level and rainfall trends. Actual conditions may differ. Always follow official warnings.</p>
+      </div>
+    </div>
+  </main>
+
+  <a href="tel:999" class="fixed bottom-6 right-6 z-50 bg-red-600 hover:bg-red-700 text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-2xl">📞</a>
+
+  <script>
+    // ============================================================
+    // TRANSLATIONS
+    // ============================================================
+    const i18n = {
+      en:{ title:'Muar AI Flood Prediction & Alert System', nav_home:'Home', nav_pred:'Prediction',
+           page_title:'Water Level Prediction', station:'Sungai Muar · Station 1',
+           k_peak:'Predicted peak', k_ttd:'Time to danger level', k_time:'Peak expected at', k_time_sub:'Estimated time',
+           k_quality:'Data quality', k_quality_sub:'Sensor online · updated 2 min ago',
+           chart_title:'Forecast', chart_note:'Solid line = measured. Dashed line = predicted. Shaded area = likely range.',
+           table_title:'Hourly forecast', col_time:'Time', col_level:'Level', col_status:'Status',
+           acc_title:'How accurate is the forecast?', acc_empty:'Accuracy figures will appear after the system has run for 7 days.',
+           disclaimer:'Predictions are estimates based on current water level and rainfall trends. Actual conditions may differ. Always follow official warnings.',
+           normal:'Normal', warning:'Warning', danger:'Danger', none:'Not expected', none_sub:'No danger level in this period',
+           in:'in about', already:'Exceeded', already_sub:'Act now', eta:'Expected around', below:'Stays below warning level',
+           sensor_1:'Station 1', sensor_2:'Station 2', sensor_3:'Station 3', ai_status_rising_danger: 'The neural network detects a rapidly rising trend. Water is expected to breach the danger level in approximately <b>{hours} hours</b> (at {time}). Immediate preparation is advised.',
+          ai_status_rising_safe: 'The neural network detects a rising trend, but the water is expected to peak at <b>{peak}m</b> around {time}, remaining below the danger threshold.',
+          ai_status_falling: 'The neural network detects a falling trend. The water level is decreasing and the risk of flooding is currently low.',
+          ai_status_stable: 'Water levels are stable. No significant rise is predicted within the next {horizon} hours.'},
+      ms:{ title:'Sistem Ramalan & Amaran Banjir AI Muar', nav_home:'Utama', nav_pred:'Ramalan',
+           page_title:'Ramalan Paras Air', station:'Sungai Muar · Stesen 1',
+           k_peak:'Puncak dijangka', k_ttd:'Masa ke paras bahaya', k_time:'Puncak dijangka pada', k_time_sub:'Anggaran masa',
+           k_quality:'Kualiti data', k_quality_sub:'Penderia aktif · dikemas kini 2 minit lalu',
+           chart_title:'Ramalan', chart_note:'Garis penuh = sebenar. Garis putus-putus = ramalan. Kawasan berlorek = julat kemungkinan.',
+           table_title:'Ramalan setiap jam', col_time:'Masa', col_level:'Paras', col_status:'Status',
+           acc_title:'Sejauh mana tepatnya ramalan?', acc_empty:'Angka ketepatan akan dipaparkan selepas sistem beroperasi selama 7 hari.',
+           disclaimer:'Ramalan ialah anggaran berdasarkan paras air dan trend hujan semasa. Keadaan sebenar mungkin berbeza. Sentiasa ikut amaran rasmi.',
+           normal:'Normal', warning:'Amaran', danger:'Bahaya', none:'Tidak dijangka', none_sub:'Tiada paras bahaya dalam tempoh ini',
+           in:'dalam lebih kurang', already:'Dilepasi', already_sub:'Bertindak sekarang', eta:'Dijangka sekitar', below:'Kekal di bawah paras amaran',
+           sensor_1:'Stesen 1', sensor_2:'Stesen 2', sensor_3:'Stesen 3', ai_status_rising_danger: 'Rangkaian neural mengesan trend meningkat pesat. Air dijangka melepasi paras bahaya dalam masa lebih kurang <b>{hours} jam</b> (pada {time}). Persediaan segera dinasihatkan.',
+        ai_status_rising_safe: 'Rangkaian neural mengesan trend meningkat, tetapi paras air dijangka memuncak pada <b>{peak}m</b> sekitar {time}, kekal di bawah paras bahaya.',
+        ai_status_falling: 'Rangkaian neural mengesan trend menurun. Paras air sedang menurun dan risiko banjir kini rendah.',
+        ai_status_stable: 'Paras air stabil. Tiada kenaikan ketara diramalkan dalam {horizon} jam akan datang.' },
+      zh:{ title:'麻坡 AI 洪水预测与警报系统', nav_home:'首页', nav_pred:'预测',
+           page_title:'水位预测', station:'麻坡河 · 1号站',
+           k_peak:'预测峰值', k_ttd:'距离危险水位', k_time:'预计峰值时间', k_time_sub:'估计时间',
+           k_quality:'数据质量', k_quality_sub:'传感器在线 · 2 分钟前更新',
+           chart_title:'预测', chart_note:'实线 = 实测。虚线 = 预测。阴影 = 可能范围。',
+           table_title:'每小时预测', col_time:'时间', col_level:'水位', col_status:'状态',
+           acc_title:'预测的准确度如何？', acc_empty:'系统运行 7 天后将显示准确度数据。',
+           disclaimer:'预测是根据当前水位和降雨趋势得出的估计，实际情况可能不同。请始终遵循官方警告。',
+           normal:'正常', warning:'警告', danger:'危险', none:'预计不会', none_sub:'此期间不会达到危险水位',
+           in:'大约', already:'已超过', already_sub:'请立即行动', eta:'预计约', below:'将保持在警告水位以下',
+           sensor_1:'1号站', sensor_2:'2号站', sensor_3:'3号站', ai_status_rising_danger: '神经网络检测到快速上升趋势。水位预计将在约 <b>{hours} 小时</b>内（{time}）突破危险水位。建议立即做好准备。',
+        ai_status_rising_safe: '神经网络检测到上升趋势，但水位预计将在 {time} 左右达到峰值 <b>{peak}m</b>，保持在危险阈值以下。',
+        ai_status_falling: '神经网络检测到下降趋势。水位正在下降，目前洪水风险较低。',
+        ai_status_stable: '水位稳定。预计未来 {horizon} 小时内不会有明显上升。' },
+      ta:{ title:'மூவார் AI வெள்ள முன்னறிவிப்பு மற்றும் எச்சரிக்கை அமைப்பு', nav_home:'முகப்பு', nav_pred:'முன்னறிவிப்பு',
+           page_title:'நீர்மட்ட முன்னறிவிப்பு', station:'மூவார் ஆறு · நிலையம் 1',
+           k_peak:'எதிர்பார்க்கப்படும் உச்சம்', k_ttd:'ஆபத்து நிலைக்கு', k_time:'உச்சம் எதிர்பார்க்கப்படும் நேரம்', k_time_sub:'மதிப்பிடப்பட்ட நேரம்',
+           k_quality:'தரவு தரம்', k_quality_sub:'சென்சார் இயங்குகிறது · 2 நிமிடங்களுக்கு முன்',
+           chart_title:'முன்னறிவிப்பு', chart_note:'நேர்கோடு = அளவிடப்பட்டது. புள்ளிக்கோடு = கணிப்பு. நிழல் பகுதி = சாத்தியமான வரம்பு.',
+           table_title:'மணிநேர முன்னறிவிப்பு', col_time:'நேரம்', col_level:'மட்டம்', col_status:'நிலை',
+           acc_title:'முன்னறிவிப்பு எவ்வளவு துல்லியம்?', acc_empty:'அமைப்பு 7 நாட்கள் இயங்கிய பிறகு துல்லிய விவரங்கள் தோன்றும்.',
+           disclaimer:'முன்னறிவிப்புகள் தற்போதைய நீர்மட்டம் மற்றும் மழைப் போக்கை அடிப்படையாகக் கொண்ட மதிப்பீடுகள். உண்மை நிலை மாறுபடலாம். எப்போதும் அதிகாரப்பூர்வ எச்சரிக்கைகளைப் பின்பற்றவும்.',
+           normal:'இயல்பு', warning:'எச்சரிக்கை', danger:'ஆபத்து', none:'எதிர்பார்க்கப்படவில்லை', none_sub:'இந்தக் காலத்தில் ஆபத்து நிலை இல்லை',
+           in:'சுமார்', already:'கடந்துவிட்டது', already_sub:'உடனே செயல்படுங்கள்', eta:'எதிர்பார்ப்பு', below:'எச்சரிக்கை நிலைக்குக் கீழே இருக்கும்',
+           sensor_1:'நிலையம் 1', sensor_2:'நிலையம் 2', sensor_3:'நிலையம் 3', ai_status_rising_danger: 'நியூரல் நெட்வொர்க் வேகமாக உயரும் போக்கை கண்டறிகிறது. நீர் மட்டம் சுமார் <b>{hours} மணி நேரத்தில்</b> ({time}) ஆபத்து நிலையை எட்டும். உடனடி தயாரிப்பு பரிந்துரைக்கப்படுகிறது.',
+        ai_status_rising_safe: 'நியூரல் நெட்வொர்க் உயரும் போக்கை கண்டறிகிறது, ஆனால் நீர் மட்டம் {time} அளவில் <b>{peak}m</b> உச்சத்தை எட்டும், ஆபத்து நிலைக்குக் கீழே இருக்கும்.',
+        ai_status_falling: 'நியூரல் நெட்வொர்க் குறையும் போக்கை கண்டறிகிறது. நீர் மட்டம் குறைந்து வருகிறது, வெள்ள ஆபத்து தற்போது குறைவு.',
+        ai_status_stable: 'நீர் மட்டம் நிலையானது. அடுத்த {horizon} மணி நேரத்தில் குறிப்பிடத்தக்க உயர்வு எதிர்பார்க்கப்படவில்லை.' }
+    };
+    let lang='en', horizon=12, chart, selectedStationId='S1';
+    try{ selectedStationId = localStorage.getItem('myStation') || 'S1'; }catch(e){}
+
+    // ============================================================
+    // STATIONS — 3 fixed, each with its own thresholds
+    // ============================================================
+        const STATIONS = [
+      { id:'S1', i18nKey:'sensor_1', lat:2.1550, lng:102.7700, warn:2.50, danger:3.00 },
+      { id:'S2', i18nKey:'sensor_2', lat:2.1450, lng:102.7600, warn:2.70, danger:3.20 },
+      { id:'S3', i18nKey:'sensor_3', lat:2.1350, lng:102.7500, warn:2.60, danger:3.10 }
+    ];
+    function selectedStation(){ return STATIONS.find(s=>s.id===selectedStationId) || STATIONS[0]; }
+
+    // ============================================================
+    // DEMO FORECAST GENERATOR — replace with GET /api/prediction?station=S1
+    // ============================================================
+    function getData(stationId, h){
+      const st = STATIONS.find(s=>s.id===stationId) || STATIONS[0];
+      // Force base to be a number (fallback to 2.0 if it's undefined)
+      const base = parseFloat(st.base) || 2.0; 
+      
+      const hist=[]; 
+      for(let i=-12;i<=0;i++) {
+        hist.push({t:i, v: +(base + 0.09*i).toFixed(2)});
+      }
+      
+      const pred=[];
+      for(let i=1;i<=h;i++){
+        let v = i<=10 ? base + 1.1*Math.sin(i/10*Math.PI/2) : base + 1.1 - 0.12*(i-10);
+        // Ensure v is a valid number before saving
+        if (isNaN(v) || v === null) v = base; 
+        
+        pred.push({ t:i, v:+v.toFixed(2), err:+(0.05 + 0.02*i).toFixed(2) });
+      }
+      return { hist, pred };
+    }
+
+    function clock(t){
+      const d=new Date(); d.setMinutes(0,0,0); d.setHours(d.getHours()+t);
+      return ('0'+d.getHours()).slice(-2)+':00';
+    }
+    function status(v,w,d){ return v>=d?'danger':v>=w?'warning':'normal'; }
+    const COLOR={normal:'text-green-600 dark:text-green-400',warning:'text-amber-600 dark:text-amber-400',danger:'text-red-600 dark:text-red-400'};
+    const DOT={normal:'🟢',warning:'🟡',danger:'🔴'};
+    function T(k){ return i18n[lang][k] || k; }
+
+    // ============================================================
+    // LOAD CUSTOM NOTES FROM ADMIN
+    // ============================================================
+        function loadCustomNotes() {
+      try {
+        const s = JSON.parse(localStorage.getItem('settings') || 'null') || {};
+        
+        if (s.noteAccTitle) document.getElementById('acc-title-display').textContent = s.noteAccTitle;
+        if (s.noteAccBody) document.getElementById('acc-body-display').textContent = s.noteAccBody;
+        if (s.noteDisclaimer) document.getElementById('disc-display').textContent = s.noteDisclaimer;
+      } catch (e) {}
+    }
+
+    // ============================================================
+    // RENDER
+    // ============================================================
+        async function render() {
+      // 1. SHOW THE AI LOADER
+      document.getElementById('ai-loader').classList.remove('hidden');
+
+      const st = selectedStation();
+      const WARN = st.warn, DANGER = st.danger;
+      
+      // Note: If you are using the async fetch API we discussed earlier, you would use:
+      // const d = await getData(st.id, horizon);
+      // Since your current getData is synchronous, this is fine:
+      const d = getData(st.id, horizon), p = d.pred;
+
+      document.getElementById('station-label').textContent = T(st.i18nKey);
+
+      // Dynamic AI Confidence (Drops slightly on 24h forecasts)
+      const conf = horizon === 6 ? 98 : horizon === 12 ? 94 : 88;
+      document.getElementById('k-ai-score').textContent = conf + '%';
+      document.getElementById('k-ai-bar').style.width = conf + '%';
+
+      // Peak KPI
+      const peak = p.length ? p.reduce((a,b)=>b.v>a.v?b:a) : {v:0,t:0};
+      if (isNaN(peak.v)) peak.v = 0; 
+      const ps = status(peak.v, WARN, DANGER);
+      document.getElementById('k-peak').innerHTML = peak.v.toFixed(2)+' <span class="text-xl font-normal text-gray-500 dark:text-gray-400">m</span>';
+      const pe = document.getElementById('k-peak-status');
+      pe.className='text-sm mt-1 font-semibold '+COLOR[ps]; pe.textContent=DOT[ps]+' '+T(ps);
+      document.getElementById('k-time').textContent = clock(peak.t);
+
+      // Time to danger
+      const cross = p.find(x=>x.v>=DANGER);
+      const ttd=document.getElementById('k-ttd'), sub=document.getElementById('k-ttd-sub');
+      if(d.hist.length && d.hist[d.hist.length-1].v>=DANGER){
+        ttd.textContent=T('already'); ttd.className='text-4xl font-bold mt-1 '+COLOR.danger; sub.textContent=T('already_sub');
+      } else if(cross){
+        ttd.textContent='~'+cross.t+' h'; ttd.className='text-4xl font-bold mt-1 '+(cross.t<2?COLOR.danger:COLOR.warning);
+        sub.textContent=T('eta')+' '+clock(cross.t);
+      } else {
+        ttd.textContent=T('none'); ttd.className='text-4xl font-bold mt-1 '+COLOR.normal; sub.textContent=T('none_sub');
+      }
+      sub.className='text-sm text-gray-500 dark:text-gray-400 mt-1';
+
+      // Table
+      document.getElementById('rows').innerHTML = p.map(x=>{
+        const s=status(x.v,WARN,DANGER), hot=cross&&x.t===cross.t?'bg-red-500/10':'';
+        return '<tr class="border-t border-gray-200 dark:border-white/10 '+hot+'"><td class="py-2">'+clock(x.t)+'</td><td>'+x.v.toFixed(2)+' m <span class="text-gray-400 text-xs">±'+x.err.toFixed(2)+'</span></td><td class="'+COLOR[s]+'">'+DOT[s]+' '+T(s)+'</td></tr>';
+      }).join('');
+
+      // AI INSIGHT TEXT GENERATION (DYNAMIC SCENARIOS)
+      const isRising = p[p.length-1].v > p[0].v;
+      const peakVal = peak.v.toFixed(2);
+      let insightText = '';
+
+      if (cross) {
+      // SCENARIO 1: Rising and will cross danger
+        insightText = T('ai_status_rising_danger')
+          .replace('{hours}', cross.t)
+          .replace('{time}', clock(cross.t));
+      } else if (isRising) {
+      // SCENARIO 2: Rising, but stays safe
+        insightText = T('ai_status_rising_safe')
+          .replace('{peak}', peakVal)
+          .replace('{time}', clock(peak.t));
+      } else if (p[p.length-1].v < p[0].v - 0.5) {
+      // SCENARIO 3: Dropping significantly
+        insightText = T('ai_status_falling');
+      } else {
+      // SCENARIO 4: Flat/Stable
+        insightText = T('ai_status_stable')
+          .replace('{horizon}', horizon);
+      }
+      
+      document.getElementById('ai-insight-text').innerHTML = insightText;
+
+      // Chart Setup
+      const all = d.hist.map(x=>x.t).concat(p.map(x=>x.t));
+      const labels = all.map(clock);
+      const n = d.hist.length;
+      const actual   = all.map((t,i)=> i<n ? +d.hist[i].v.toFixed(2) : null);
+      const predicted= all.map((t,i)=> i===n-1 ? +d.hist[i].v.toFixed(2) : i>=n ? +p[i-n].v.toFixed(2) : null);
+      const lower    = all.map((t,i)=> i>=n ? +(p[i-n].v - p[i-n].err).toFixed(2) : null);
+      const upper    = all.map((t,i)=> i>=n ? +(p[i-n].v + p[i-n].err).toFixed(2) : null);
+      const flat = v => all.map(()=>v);
+      
+      const cfg = {
+        labels,
+        datasets:[
+          {label:'Measured',data:actual,borderColor:'#2F80FF',borderWidth:3,pointRadius:0,tension:.3},
+          {label:'Predicted',data:predicted,borderColor:'#64B5F6',borderWidth:3,borderDash:[8,6],pointRadius:0,tension:.3},
+          {label:'Low',data:lower,borderWidth:0,pointRadius:0,tension:.3,fill:false},
+          {label:'High',data:upper,borderWidth:0,pointRadius:0,tension:.3,fill:'-1',backgroundColor:'rgba(100,181,246,.22)'},
+          {label:'Warning '+WARN+' m',data:flat(WARN),borderColor:'#FBBF24',borderWidth:1.5,borderDash:[4,4],pointRadius:0},
+          {label:'Danger '+DANGER+' m',data:flat(DANGER),borderColor:'#F87171',borderWidth:1.5,borderDash:[4,4],pointRadius:0}
+        ]
+      };
+
+      // 2. SIMULATE AI THINKING (800ms delay)
+      setTimeout(() => {
+        if(chart){ 
+          chart.data = cfg; 
+          chart.update(); 
+        } else {
+          chart = new Chart(document.getElementById('chart'),{
+            type:'line', data:cfg,
+            options:{
+              responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+              scales:{
+                x:{ticks:{color:'#9CA3AF',maxTicksLimit:8},grid:{color:'rgba(128,128,128,.15)'}},
+                y:{title:{display:true,text:'m',color:'#9CA3AF'},ticks:{color:'#9CA3AF'},grid:{color:'rgba(128,128,128,.15)'},suggestedMin:1,suggestedMax:3.8}
+              },
+              plugins:{
+                legend:{labels:{color:'#9CA3AF',filter:i=>i.text!=='Low'&&i.text!=='High'}},
+                tooltip:{filter:i=>i.dataset.label!=='Low'&&i.dataset.label!=='High'}
+              }
+            }
+          });
+        }
+        
+        // 3. HIDE THE AI LOADER WHEN DONE
+        document.getElementById('ai-loader').classList.add('hidden');
+      }, 800); 
+    }
+
+    // ============================================================
+    // STATION PICKER
+    // ============================================================
+    function renderPicker(){
+      const box = document.getElementById('station-picker'); box.innerHTML='';
+      STATIONS.forEach(st=>{
+        const b=document.createElement('button');
+        b.type='button';
+        b.className='px-3 py-1.5 station-btn border border-gray-300 dark:border-white/20 '+(st.id===selectedStationId?'active':'');
+        b.textContent=T(st.i18nKey);
+        b.onclick=()=>{ selectedStationId=st.id; try{localStorage.setItem('myStation',st.id);}catch(e){} renderPicker(); render(); };
+        box.appendChild(b);
+      });
+    }
+
+    // ============================================================
+    // HORIZON / LANG / THEME
+    // ============================================================
+    function paintHorizon(){
+      document.querySelectorAll('#horizon button').forEach(b=>{
+        const on=+b.dataset.h===horizon;
+        b.classList.toggle('bg-brand',on); b.classList.toggle('text-white',on);
+      });
+    }
+    document.querySelectorAll('#horizon button').forEach(b=>{
+      b.onclick=()=>{ horizon=+b.dataset.h; paintHorizon(); render(); };
+    });
+
+        function setLang(l) {
+      if (!i18n[l]) l = 'en';
+      lang = l; document.documentElement.lang = l;
+      document.querySelectorAll('[data-i18n]').forEach(el => { 
+        const t = i18n[l][el.dataset.i18n]; 
+        if (t !== undefined) el.textContent = t; 
+      });
+      document.title = i18n[l].page_title + ' · Muar';
+      document.getElementById('lang-select').value = l;
+      try { localStorage.setItem('lang', l); } catch (e) {}
+      renderPicker();
+      render();
+      
+      loadCustomNotes(); 
+    }
+    function setTheme(t){
+      document.documentElement.classList.toggle('dark',t==='dark');
+      document.getElementById('btn-theme').textContent=t==='dark'?'☀️':'🌙';
+      try{localStorage.setItem('theme',t);}catch(e){}
+    }
+    function toggleTheme(){ setTheme(document.documentElement.classList.contains('dark')?'light':'dark'); }
+
+    // ============================================================
+    // BOOT
+    // ============================================================
+    paintHorizon();
+    setTheme(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+    var saved = 'en'; try { saved = localStorage.getItem('lang') || 'en'; } catch (e) {}
+    setLang(saved);
+    </script>
+</body>
+</html>

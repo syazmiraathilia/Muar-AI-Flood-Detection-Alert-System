@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Muar AI Flood Prediction & Alert System</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Sans+Tamil:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { darkMode:'class', theme:{ extend:{
+      fontFamily:{ sans:['Poppins','Noto Sans SC','Noto Sans Tamil','sans-serif'] },
+      colors:{ page:{DEFAULT:'#F5F7FA',dark:'#1B1D29'}, card:{DEFAULT:'#FFFFFF',dark:'#232538'},
+               accent:{DEFAULT:'#0891B2',dark:'#22D3EE'}, brand:'#2F80FF' } } } };
+    try { if (localStorage.getItem('theme')==='light') document.documentElement.classList.remove('dark'); } catch(e){}
+  </script>
+  <style>
+    html.dark .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9); }
+    .station-btn.active { background:#2F80FF; color:#fff; border-color:#2F80FF; }
+  </style>
+  <style>
+  /* ALERT ANIMATIONS */
+  @keyframes slideDown {
+    0% { transform: translateY(-50px); opacity: 0; }
+    100% { transform: translateY(0); opacity: 1; }
+  }
+  @keyframes pulseBorderDanger {
+    0%, 100% { border-color: #ef4444; box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
+    50% { border-color: #b91c1c; box-shadow: 0 0 35px rgba(239, 68, 68, 0.8); }
+  }
+  @keyframes pulseBorderWarning {
+    0%, 100% { border-color: #f59e0b; box-shadow: 0 0 15px rgba(245, 158, 11, 0.4); }
+    50% { border-color: #d97706; box-shadow: 0 0 35px rgba(245, 158, 11, 0.8); }
+  }
+  @keyframes ringBell {
+    0% { transform: rotate(0); }
+
+    10% { transform: rotate(15deg); }
+    20% { transform: rotate(-10deg); }
+    30% { transform: rotate(5deg); }
+    40% { transform: rotate(-5deg); }
+    50% { transform: rotate(0); }
+    100% { transform: rotate(0); }
+  }
+  @keyframes bgBreathingDanger {
+    0%, 100% { background: rgba(239, 68, 68, 0.05); }
+    50% { background: rgba(239, 68, 68, 0.15); }
+  }
+  @keyframes bgBreathingWarning {
+    0%, 100% { background: rgba(245, 158, 11, 0.05); }
+    50% { background: rgba(245, 158, 11, 0.15); }
+  }
+
+  .alert-animate-in { animation: slideDown 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+  .alert-danger-mode { animation: pulseBorderDanger 1.5s infinite; border-top-width: 8px; }
+  .alert-warning-mode { animation: pulseBorderWarning 1.5s infinite; border-top-width: 8px; }
+  .alert-icon-animate { animation: ringBell 1.5s infinite; display: inline-block; }
+  .alert-bg-danger { animation: bgBreathingDanger 2s infinite; }
+  .alert-bg-warning { animation: bgBreathingWarning 2s infinite; }
+
+  /* Station button active state */
+  .station-btn.active { background:#2F80FF; color:#fff; border-color:#2F80FF; }
+</style>
+</head>
+
+<body class="bg-page dark:bg-page-dark text-gray-800 dark:text-white font-sans min-h-screen">
+
+    <!-- HEADER -->
+  <header class="sticky top-0 z-50 min-h-16 py-2 px-4 md:px-8 flex flex-wrap items-center justify-between gap-3 bg-card dark:bg-card-dark shadow-md">
+    <h1 class="text-base md:text-xl font-black tracking-tight leading-tight flex items-center gap-2">
+      <span class="text-2xl md:text-3xl drop-shadow-md">🌊</span>
+      <span class="bg-gradient-to-r from-brand to-accent dark:from-[#2F80FF] dark:to-[#22D3EE] bg-clip-text text-transparent drop-shadow-sm" data-i18n="title">
+        Muar AI Flood Prediction & Alert System
+      </span>
+    </h1>
+    <div class="flex items-center gap-2 md:gap-3 flex-shrink-0">
+      
+      <!-- NEW DYNAMIC API STATUS -->
+      <span class="hidden lg:flex items-center gap-1.5 text-xs md:text-sm text-gray-500 dark:text-gray-400">
+        <span id="api-dot" class="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse"></span>
+        <span id="api-status-text">Simulation Mode</span>
+      </span>
+
+      <span id="pill" class="hidden sm:inline-block px-3 py-1 rounded-full text-sm font-semibold border"></span>
+      <a href="prediction.html" data-i18n="nav_pred" class="px-3 py-1.5 rounded-full bg-brand hover:bg-blue-500 text-white text-sm font-medium whitespace-nowrap">Prediction</a>
+      <a href="admin.html" title="Admin login" aria-label="Admin login" class="w-9 h-9 rounded-full border border-gray-300 dark:border-white/20 text-lg flex items-center justify-center hover:bg-gray-100 dark:hover:bg-white/10">🔑</a>
+      <select id="lang-select" onchange="setLang(this.value)" aria-label="Language" class="h-9 rounded-full border border-gray-300 dark:border-white/20 bg-white dark:bg-[#232538] text-gray-800 dark:text-white text-xs font-semibold px-3 cursor-pointer">
+        <option value="en">English</option><option value="ms">Bahasa Melayu</option>
+        <option value="zh">中文</option><option value="ta">தமிழ்</option>
+      </select>
+      <!-- SIMULATE ALERT BUTTON -->
+      <button id="btn-demo" onclick="triggerDemoAlert()" title="Simulate Danger for Demo" class="hidden sm:flex items-center gap-1 px-3 py-1.5 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-transform hover:scale-105 shadow-md">
+        🚨 Test Alert
+      </button>
+      <button id="btn-theme" onclick="toggleTheme()" aria-label="Toggle theme" class="w-9 h-9 rounded-full border border-gray-300 dark:border-white/20 text-lg flex items-center justify-center">🌙</button>
+    </div>
+  </header>
+
+  <main class="p-4 md:p-8 max-w-[1800px] mx-auto space-y-4 md:space-y-6">
+
+        <!-- ANNOUNCEMENTS -->
+    <div class="bg-card dark:bg-card-dark rounded-xl shadow-md p-6 text-center">
+      <h3 class="text-lg font-semibold text-accent dark:text-accent-dark mb-4" data-i18n="ann_title">📢 Announcements</h3>
+      
+      <!-- Added flex and justify-center here -->
+      <div id="ann-list" class="flex flex-col items-center justify-center divide-y divide-gray-200 dark:divide-white/10 w-full"></div>
+    </div>
+
+        <!-- SENSOR SELECTOR -->
+    <div class="bg-card dark:bg-card-dark rounded-xl shadow-md p-6 text-center">
+      <p class="text-base font-semibold mb-4" data-i18n="choose_sensor">Which sensor is nearest to your house?</p>
+      
+      <!-- Added justify-center here -->
+      <div id="station-picker" class="flex flex-wrap justify-center gap-2"></div>
+      
+      <p class="text-xs text-gray-500 dark:text-gray-400 mt-4" data-i18n="choose_hint">The page shows the water level for the sensor you pick. Your choice is saved in this browser.</p>
+    </div>
+
+    <!-- ROW 1: KPI + MAP 1 -->
+    <div class="flex flex-col md:flex-row gap-4 md:gap-6">
+      <!-- KPI CARD -->
+      <div class="bg-card dark:bg-card-dark rounded-xl shadow-md p-6 w-full md:w-[38%] flex-shrink-0 flex flex-col">
+        <div class="flex justify-between items-center">
+          <p class="text-sm text-gray-500 dark:text-gray-400" data-i18n="current_level">Current Water Level</p>
+          <span id="pill-m" class="sm:hidden px-2 py-0.5 rounded-full text-xs font-semibold border"></span>
+        </div>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mb-4" id="station-label">–</p>
+        <div class="flex items-baseline gap-2">
+          <h2 id="lvl" class="text-5xl font-bold">–</h2>
+          <span class="text-xl text-gray-500 dark:text-gray-400">m</span>
+        </div>
+        <p id="trend" class="text-red-600 dark:text-red-400 text-sm mb-6">–</p>
+        <div class="w-full h-3 rounded-full relative flex">
+          <div id="g-green" class="h-3 bg-green-500 dark:bg-green-400 rounded-l-full"></div>
+          <div id="g-amber" class="h-3 bg-amber-500 dark:bg-amber-400"></div>
+          <div id="g-red" class="h-3 bg-red-500 dark:bg-red-400 rounded-r-full flex-grow"></div>
+          <div id="g-mark" class="absolute -top-1 h-5 w-1 bg-gray-900 dark:bg-white border border-white dark:border-gray-800 rounded"></div>
+        </div>
+        <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mt-2">
+          <span>🟢 0 m</span><span id="g-lbl-warn"></span><span id="g-lbl-danger"></span>
+        </div>
+        <div class="mt-auto pt-6">
+          <p class="text-xs text-gray-500 dark:text-gray-400 mb-1" data-i18n="spark_title">Last 6 hours</p>
+          <svg viewBox="0 0 300 60" preserveAspectRatio="none" class="w-full h-16"><polyline id="spark" points="0,50 50,46 100,40 150,34 200,26 250,18 300,10" fill="none" stroke="#64B5F6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <div class="grid grid-cols-3 gap-3 mt-4 text-center">
+            <div class="rounded-lg bg-gray-100 dark:bg-white/5 p-2">
+              <p class="text-[11px] text-gray-500 dark:text-gray-400" data-i18n="s_warn">Warning level</p>
+              <p id="b-warn" class="font-semibold text-amber-600 dark:text-amber-400"></p>
+            </div>
+            <div class="rounded-lg bg-gray-100 dark:bg-white/5 p-2">
+              <p class="text-[11px] text-gray-500 dark:text-gray-400" data-i18n="s_danger">Danger level</p>
+              <p id="b-danger" class="font-semibold text-red-600 dark:text-red-400"></p>
+            </div>
+            <div class="rounded-lg bg-gray-100 dark:bg-white/5 p-2">
+              <p class="text-[11px] text-gray-500 dark:text-gray-400" data-i18n="s_rain">Rainfall (1 h)</p>
+              <p class="font-semibold">4.2 mm</p>
+            </div>
+          </div>
+          <p class="text-[11px] text-gray-400 dark:text-gray-500 mt-4" data-i18n="updated">Updated 2 min ago</p>
+        </div>
+      </div>
+
+      <!-- MAP 1 -->
+      <div class="bg-card dark:bg-card-dark rounded-xl shadow-md w-full h-[420px] flex flex-col overflow-hidden">
+        <div class="p-4 border-b border-gray-200 dark:border-white/10 flex justify-between items-center gap-2">
+          <h3 class="font-semibold text-accent dark:text-accent-dark" data-i18n="map1_title">🗺 Water Level Map</h3>
+          <span class="text-xs text-gray-500 dark:text-gray-400" data-i18n="legend">🟢 Normal 🟡 Warning 🔴 Danger</span>
+        </div>
+        <div id="map-level" class="flex-grow relative z-0 min-h-0"></div>
+      </div>
+    </div>
+
+    <!-- ROW 2: EMERGENCY + MAP 2 -->
+    <div class="flex flex-col md:flex-row gap-4 md:gap-6">
+      <div class="bg-card dark:bg-card-dark rounded-xl shadow-md p-6 w-full md:w-[38%] flex-shrink-0 flex flex-col border-t-4 border-red-700 dark:border-red-800">
+        <h3 class="font-bold text-red-700 dark:text-red-300 text-lg mb-4" data-i18n="emergency_title">🚨 EMERGENCY NUMBERS</h3>
+        <div id="em-list" class="space-y-3"></div>
+      </div>
+      <div class="bg-card dark:bg-card-dark rounded-xl shadow-md w-full h-[420px] flex flex-col overflow-hidden">
+        <div class="p-4 border-b border-gray-200 dark:border-white/10 flex justify-between items-center gap-2">
+          <h3 class="font-semibold text-accent dark:text-accent-dark" data-i18n="map2_title">🏠 Nearest Flood Shelter</h3>
+          <button onclick="useMyLocation()" class="bg-brand hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-full whitespace-nowrap" data-i18n="use_location">📍 Use my location</button>
+        </div>
+        <div id="map-shelter" class="flex-grow relative z-0 min-h-0"></div>
+      </div>
+    </div>
+  </main>
+
+  <a href="tel:999" class="fixed bottom-6 right-6 z-50 bg-red-500 hover:bg-red-600 text-white w-14 h-14 rounded-full shadow-lg flex items-center justify-center text-2xl">📞</a>
+
+   <!-- ALERT MODAL -->
+  <div id="alert-overlay" class="hidden fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center p-4 backdrop-blur-sm" role="alertdialog" aria-modal="true" aria-labelledby="alert-title">
+    <!-- The ID alert-box gets dynamically styled in JS -->
+    <div id="alert-box" class="bg-card dark:bg-card-dark rounded-2xl shadow-2xl max-w-md w-full border-t-8 overflow-hidden">
+      
+      <!-- Animated background layer -->
+      <div id="alert-bg" class="absolute inset-0 z-0 pointer-events-none"></div>
+      
+      <!-- Content layer -->
+      <div class="p-6 relative z-10">
+        <div class="flex items-center gap-3 mb-3">
+          <span id="alert-icon" class="text-4xl">🚨</span>
+          <h2 id="alert-title" class="text-2xl font-black tracking-wide"></h2>
+        </div>
+        
+        <p id="alert-station" class="text-sm font-semibold text-gray-500 dark:text-gray-400 mb-1"></p>
+        
+        <p id="alert-level" class="text-6xl font-black mb-2 tracking-tighter"></p>
+        
+        <p id="alert-body" class="text-sm font-medium text-gray-700 dark:text-gray-300 leading-relaxed"></p>
+        
+        <div class="mt-8 flex flex-wrap gap-3">
+          <button id="btn-go-shelter"  data-i18n="alert_shelter" class="flex-1 bg-brand hover:bg-blue-600 text-white text-sm font-bold px-4 py-3 rounded-full transition-transform hover:scale-105">Find nearest shelter</button>
+          
+          <a href="tel:999" class="bg-red-600 hover:bg-red-700 text-white text-sm font-bold px-6 py-3 rounded-full transition-transform hover:scale-105">📞 999</a>
+          
+          <button id="btn-close-alert" data-i18n="alert_close" class="border-2 border-gray-300 dark:border-white/20 hover:bg-gray-100 dark:hover:bg-white/10 text-sm font-bold px-6 py-3 rounded-full transition-colors">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- POSTER VIEWER -->
+  <div id="poster-overlay" class="hidden fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center p-4" onclick="if (event.target === this) closePoster()">
+    <div class="bg-card dark:bg-card-dark rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-auto p-4">
+      <img id="poster-img" alt="" class="w-full rounded-lg">
+      <div class="mt-4 flex flex-wrap gap-2">
+        <a id="poster-link" target="_blank" rel="noopener" class="hidden bg-brand hover:bg-blue-500 text-white text-sm font-medium px-4 py-2 rounded-full"></a>
+        <button id="poster-close" onclick="closePoster()" class="border border-gray-300 dark:border-white/20 text-sm font-medium px-4 py-2 rounded-full"></button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ============================================================
+    // TRANSLATIONS (new keys: choose_sensor, choose_hint, sensor_1..3)
+    // ============================================================
+    const i18n = {
+      en:{ title:'Muar AI Flood Prediction & Alert System', nav_pred:'Prediction', live:'Live · 2 min ago',
+           current_level:'Current Water Level', station:'Sungai Muar · Station 1', trend:'↑ 0.12 m in last hour',
+           updated:'Updated 2 min ago', spark_title:'Last 6 hours', s_warn:'Warning level', s_danger:'Danger level',
+           s_rain:'Rainfall (1 h)', map1_title:'🗺 Water Level Map', legend:'🟢 Normal 🟡 Warning 🔴 Danger',
+           emergency_title:'🚨 EMERGENCY NUMBERS', em1:'Emergency Services', em2:'Civil Defence (APM) Muar', em3:'Local Flood Hotline',
+           map2_title:'🏠 Nearest Flood Shelter', use_location:'📍 Use my location', ann_title:'📢 Announcements',
+           tag_emergency:'EMERGENCY', tag_warning:'WARNING', ann1:'Water level rising fast at Sungai Muar. Avoid low-lying roads.',
+           ann2:'Heavy rain expected until 20:00. Monitor updates.', read_more:'Read More →',
+           alert_warn_title:'Water level is rising', alert_warn_body:'The water level has passed the warning level. Stay alert and be ready to move to higher ground.',
+           alert_danger_title:'Flood danger', alert_danger_body:'The water level has reached the danger level. Move to higher ground or the nearest flood shelter now.',
+           alert_close:'Close', alert_shelter:'Find nearest shelter',
+           choose_sensor:'Which sensor is nearest to your house?',
+           choose_hint:'The page shows the water level for the sensor you pick. Your choice is saved in this browser.',
+           sensor_1:'Station 1 · Sungai Muar (North)', sensor_2:'Station 2 · Sungai Muar (Centre)', sensor_3:'Station 3 · Sungai Muar (South)' },
+      ms:{ title:'Sistem Ramalan & Amaran Banjir AI Muar', nav_pred:'Ramalan', live:'Langsung · 2 minit lalu',
+           current_level:'Paras Air Semasa', station:'Sungai Muar · Stesen 1', trend:'↑ 0.12 m dalam sejam lalu',
+           updated:'Dikemas kini 2 minit lalu', spark_title:'6 jam lalu', s_warn:'Paras amaran', s_danger:'Paras bahaya',
+           s_rain:'Hujan (1 j)', map1_title:'🗺 Peta Paras Air', legend:'🟢 Normal 🟡 Amaran 🔴 Bahaya',
+           emergency_title:'🚨 NOMBOR KECEMASAN', em1:'Perkhidmatan Kecemasan', em2:'Pertahanan Awam (APM) Muar', em3:'Talian Hotline Banjir Tempatan',
+           map2_title:'🏠 Pusat Pemindahan Banjir Terdekat', use_location:'📍 Guna lokasi saya', ann_title:'📢 Pengumuman',
+           tag_emergency:'KECEMASAN', tag_warning:'AMARAN', ann1:'Paras air naik dengan cepat di Sungai Muar. Elakkan jalan di kawasan rendah.',
+           ann2:'Hujan lebat dijangka sehingga 20:00. Sila pantau kemas kini.', read_more:'Baca Lagi →',
+           alert_warn_title:'Paras air sedang meningkat', alert_warn_body:'Paras air telah melepasi paras amaran. Sentiasa berwaspada dan bersedia berpindah ke kawasan tinggi.',
+           alert_danger_title:'Bahaya banjir', alert_danger_body:'Paras air telah mencapai paras bahaya. Berpindah ke kawasan tinggi atau pusat pemindahan banjir terdekat sekarang.',
+           alert_close:'Tutup', alert_shelter:'Cari pusat pemindahan terdekat',
+           choose_sensor:'Penderia mana yang paling dekat dengan rumah anda?',
+           choose_hint:'Halaman ini menunjukkan paras air bagi penderia pilihan anda. Pilihan disimpan dalam pelayar ini.',
+           sensor_1:'Stesen 1 · Sungai Muar (Utara)', sensor_2:'Stesen 2 · Sungai Muar (Tengah)', sensor_3:'Stesen 3 · Sungai Muar (Selatan)' },
+      zh:{ title:'麻坡 AI 洪水预测与警报系统', nav_pred:'预测', live:'实时 · 2 分钟前',
+           current_level:'当前水位', station:'麻坡河 · 1号站', trend:'↑ 过去一小时上升 0.12 米',
+           updated:'2 分钟前更新', spark_title:'过去 6 小时', s_warn:'警告水位', s_danger:'危险水位',
+           s_rain:'降雨量（1小时）', map1_title:'🗺 水位地图', legend:'🟢 正常 🟡 警告 🔴 危险',
+           emergency_title:'🚨 紧急电话', em1:'紧急服务', em2:'民防队 (APM) 麻坡', em3:'本地洪水热线',
+           map2_title:'🏠 最近的疏散中心', use_location:'📍 使用我的位置', ann_title:'📢 公告',
+           tag_emergency:'紧急', tag_warning:'警告', ann1:'麻坡河水位迅速上涨，请避开低洼道路。',
+           ann2:'预计降大雨至 20:00，请留意最新消息。', read_more:'阅读更多 →',
+           alert_warn_title:'水位正在上升', alert_warn_body:'水位已超过警告水位。请保持警惕，并准备转移到较高的地方。',
+           alert_danger_title:'洪水危险', alert_danger_body:'水位已达到危险水位。请立即转移到高地或最近的疏散中心。',
+           alert_close:'关闭', alert_shelter:'查找最近的疏散中心',
+           choose_sensor:'哪个传感器离您家最近？',
+           choose_hint:'页面显示您所选传感器的水位。您的选择会保存在此浏览器中。',
+           sensor_1:'1号站 · 麻坡河（北）', sensor_2:'2号站 · 麻坡河（中）', sensor_3:'3号站 · 麻坡河（南）' },
+      ta:{ title:'மூவார் AI வெள்ள முன்னறிவிப்பு மற்றும் எச்சரிக்கை அமைப்பு', nav_pred:'முன்னறிவிப்பு', live:'நேரலை · 2 நிமிடங்களுக்கு முன்',
+           current_level:'தற்போதைய நீர்மட்டம்', station:'மூவார் ஆறு · நிலையம் 1', trend:'↑ கடந்த ஒரு மணி நேரத்தில் 0.12 மீ',
+           updated:'2 நிமிடங்களுக்கு முன் புதுப்பிக்கப்பட்டது', spark_title:'கடந்த 6 மணி நேரம்', s_warn:'எச்சரிக்கை நிலை', s_danger:'ஆபத்து நிலை',
+           s_rain:'மழை (1 மணி)', map1_title:'🗺 நீர்மட்ட வரைபடம்', legend:'🟢 இயல்பு 🟡 எச்சரிக்கை 🔴 ஆபத்து',
+           emergency_title:'🚨 அவசர தொலைபேசி எண்கள்', em1:'அவசர சேவைகள்', em2:'குடிமைத் தற்காப்புப் படை (APM) மூவார்', em3:'உள்ளூர் வெள்ள உதவி எண்',
+           map2_title:'🏠 அருகிலுள்ள வெள்ள நிவாரண மையம்', use_location:'📍 என் இருப்பிடத்தைப் பயன்படுத்து', ann_title:'📢 அறிவிப்புகள்',
+           tag_emergency:'அவசரம்', tag_warning:'எச்சரிக்கை', ann1:'மூவார் ஆற்றில் நீர்மட்டம் வேகமாக உயர்கிறது. தாழ்வான சாலைகளைத் தவிர்க்கவும்.',
+           ann2:'இரவு 8:00 மணி வரை கனமழை எதிர்பார்க்கப்படுகிறது. புதுப்பிப்புகளைக் கவனிக்கவும்.', read_more:'மேலும் படிக்க →',
+           alert_warn_title:'நீர்மட்டம் உயர்ந்து வருகிறது', alert_warn_body:'நீர்மட்டம் எச்சரிக்கை நிலையைத் தாண்டிவிட்டது. விழிப்புடன் இருங்கள்; உயரமான பகுதிக்குச் செல்லத் தயாராக இருங்கள்.',
+           alert_danger_title:'வெள்ள ஆபத்து', alert_danger_body:'நீர்மட்டம் ஆபத்து நிலையை எட்டிவிட்டது. உடனே உயரமான பகுதிக்கு அல்லது அருகிலுள்ள நிவாரண மையத்திற்குச் செல்லுங்கள்.',
+           alert_close:'மூடு', alert_shelter:'அருகிலுள்ள நிவாரண மையம்',
+           choose_sensor:'உங்கள் வீட்டிற்கு அருகிலுள்ள சென்சார் எது?',
+           choose_hint:'நீங்கள் தேர்ந்தெடுக்கும் சென்சாரின் நீர்மட்டம் இங்கே காட்டப்படும். உங்கள் தேர்வு இந்த உலாவியில் சேமிக்கப்படும்.',
+           sensor_1:'நிலையம் 1 · மூவார் ஆறு (வடக்கு)', sensor_2:'நிலையம் 2 · மூவார் ஆறு (மத்தி)', sensor_3:'நிலையம் 3 · மூவார் ஆறு (தெற்கு)' }
+    };
+
+    function $(id){ return document.getElementById(id); }
+    function curLang(){ var l=document.documentElement.lang; return i18n[l]?l:'en'; }
+
+    // ============================================================
+    // STATIONS — 3 fixed sensors. Each has its own thresholds.
+    // Real data: replace fetchStations() with your API call.
+    // ============================================================
+    const STATIONS = [
+      { id:'S1', i18nKey:'sensor_1', lat:2.1550, lng:102.7700, warn:2.50, danger:3.00 },
+      { id:'S2', i18nKey:'sensor_2', lat:2.1450, lng:102.7600, warn:2.70, danger:3.20 },
+      { id:'S3', i18nKey:'sensor_3', lat:2.1350, lng:102.7500, warn:2.60, danger:3.10 }
+    ];
+
+    // 1. DECLARE THE OVERRIDE VARIABLE
+    let DEMO_OVERRIDE_LEVEL = null;
+
+    // 2. THE DEMO GENERATOR
+    function demoSensorRead(id) {
+      const map = { S1:2.34, S2:2.62, S3:2.88 };
+      const level = DEMO_OVERRIDE_LEVEL !== null ? DEMO_OVERRIDE_LEVEL : (map[id] || 2.0);
+      return { level: level, updated: Date.now(), rain: 15.5, trend: 0.85 };
+    }
+
+    // 3. THE FETCH STATIONS (Keep this exactly as it is)
+    async function fetchStations() {
+      const out = {};
+      for (const s of STATIONS) out[s.id] = demoSensorRead(s.id);
+      return out;
+    }
+
+    // 4. THE TOGGLE BUTTON LOGIC
+    let isDemoActive = false;
+    async function triggerDemoAlert() {
+      const btn = document.getElementById('btn-demo');
+      
+      if (!isDemoActive) {
+        // START DEMO
+        isDemoActive = true;
+        DEMO_OVERRIDE_LEVEL = 3.50; 
+        btn.innerHTML = '⏹ Stop Demo';
+        btn.classList.replace('bg-red-600', 'bg-gray-600');
+        btn.classList.replace('hover:bg-red-700', 'hover:bg-gray-700');
+        
+        liveData = await fetchStations(); 
+        renderAll(); 
+        
+        const st = selectedStation();
+        showAlert(st, 'danger', 3.50);
+      } else {
+        // STOP DEMO
+        isDemoActive = false;
+        DEMO_OVERRIDE_LEVEL = null; 
+        btn.innerHTML = '🚨 Test Alert';
+        btn.classList.replace('bg-gray-600', 'bg-red-600');
+        btn.classList.replace('hover:bg-gray-700', 'hover:bg-red-700');
+        
+        closeAlert(); 
+        liveData = await fetchStations(); 
+        renderAll(); 
+      }
+    }
+
+    // ============================================================
+    // STATE
+    // ============================================================
+    let liveData = {};
+    let selectedStationId = 'S1';
+    try { selectedStationId = localStorage.getItem('myStation') || 'S1'; } catch(e){}
+
+    function selectedStation(){ return STATIONS.find(s=>s.id===selectedStationId) || STATIONS[0]; }
+    function statusFor(st, level){ return level >= st.danger ? 'danger' : level >= st.warn ? 'warning' : 'normal'; }
+
+    // ============================================================
+    // I18N
+    // ============================================================
+    function setLang(lang){
+      if (!i18n[lang]) lang='en';
+      document.documentElement.lang = lang;
+      document.querySelectorAll('[data-i18n]').forEach(el=>{
+        const t = i18n[lang][el.dataset.i18n]; if (t!==undefined) el.textContent = t;
+      });
+      document.title = i18n[lang].title;
+      $('lang-select').value = lang;
+      try { localStorage.setItem('lang', lang); } catch(e){}
+      renderPicker();
+      renderAll();
+    }
+
+    // ============================================================
+    // STATION PICKER
+    // ============================================================
+    function renderPicker(){
+      const box = $('station-picker'); box.innerHTML = '';
+      const T = i18n[curLang()];
+      STATIONS.forEach(st=>{
+        const b = document.createElement('button');
+        b.type='button';
+        b.className = 'station-btn px-4 py-2 rounded-full border border-gray-300 dark:border-white/20 text-sm font-medium '+(st.id===selectedStationId?'active':'');
+        b.textContent = T[st.i18nKey];
+        b.onclick = ()=>{ selectedStationId=st.id; try{localStorage.setItem('myStation',st.id);}catch(e){} renderPicker(); renderAll(); };
+        box.appendChild(b);
+      });
+    }
+
+    // ============================================================
+    // MAPS
+    // ============================================================
+    const MUAR_CENTER = [2.1000, 102.6500]; 
+    const MUAR_BOUNDS = [[1.90, 102.40], [2.35, 102.95]];
+    const OSM_URL='https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+    const ATTR='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+    const STATUS_COLORS={normal:'#4ADE80',warning:'#FBBF24',danger:'#F87171'};
+
+    function createMap(id){
+      const map = L.map(id,{center:MUAR_CENTER,zoom:12,minZoom:10,maxZoom:18,maxBounds:MUAR_BOUNDS,maxBoundsViscosity:1.0});
+      L.tileLayer(OSM_URL,{attribution:ATTR,maxZoom:19}).addTo(map);
+      return map;
+    }
+    const levelMap = createMap('map-level');
+    const shelterMap = createMap('map-shelter');
+    const shelterLayer = L.layerGroup().addTo(shelterMap);
+    const stationMarkers = {};   // id -> circleMarker
+
+    function ensureStationMarkers(){
+      STATIONS.forEach(st=>{
+        if (!stationMarkers[st.id]){
+          stationMarkers[st.id] = L.circleMarker([st.lat,st.lng],{radius:11,color:'#fff',weight:2,fillOpacity:1}).addTo(levelMap);
+          stationMarkers[st.id].on('click', ()=>{ selectedStationId=st.id; try{localStorage.setItem('myStation',st.id);}catch(e){} renderPicker(); renderAll(); });
+        }
+      });
+    }
+
+    // ============================================================
+    // SHELTERS
+    // ============================================================
+    const DEF_SHELTERS=[{name:'Sample shelter 1',lat:2.0500,lng:102.5800,capacity:200,open:true},
+                       {name:'Sample shelter 2',lat:2.0350,lng:102.5600,capacity:150,open:true}];
+    function getSettings(){
+      const s={ numbers:null, shelters:null };
+      try{ const r=JSON.parse(localStorage.getItem('settings')||'null'); if(r) Object.assign(s,r); }catch(e){}
+      if(!s.shelters) s.shelters = DEF_SHELTERS;
+      return s;
+    }
+    const SH={ en:{cap:'Capacity',open:'Open',closed:'Closed'}, ms:{cap:'Kapasiti',open:'Dibuka',closed:'Ditutup'},
+               zh:{cap:'容量',open:'开放',closed:'关闭'}, ta:{cap:'கொள்ளளவு',open:'திறந்துள்ளது',closed:'மூடப்பட்டுள்ளது'} };
+    function renderShelters(){
+      const lang=curLang(), S=getSettings();
+      shelterLayer.clearLayers();
+      S.shelters.forEach(s=>{
+        const lat=parseFloat(s.lat), lng=parseFloat(s.lng); if(isNaN(lat)||isNaN(lng)) return;
+        const el=document.createElement('div'), b=document.createElement('b');
+        b.textContent=s.name; el.appendChild(b); el.appendChild(document.createElement('br'));
+        if(s.address){ el.appendChild(document.createTextNode(s.address)); el.appendChild(document.createElement('br')); }
+        el.appendChild(document.createTextNode(SH[lang].cap+': '+(s.capacity||'-')+' · '+(s.open===false?SH[lang].closed:SH[lang].open)));
+        L.circleMarker([lat,lng],{radius:9,color:'#fff',weight:2,fillColor:s.open===false?'#9CA3AF':'#14B8A6',fillOpacity:1})
+          .addTo(shelterLayer).bindPopup(el);
+      });
+    }
+    function useMyLocation(){
+      if(!navigator.geolocation){ alert('Geolocation not supported.'); return; }
+      navigator.geolocation.getCurrentPosition(pos=>{
+        const lat=pos.coords.latitude, lng=pos.coords.longitude;
+        shelterMap.setView([lat,lng],14);
+        L.circleMarker([lat,lng],{radius:8,color:'#2F80FF',fillColor:'#2F80FF',fillOpacity:1})
+          .addTo(shelterMap).bindPopup('You are here').openPopup();
+      }, ()=>alert('Could not get your location.'));
+    }
+
+    // ============================================================
+    // STATUS PAINTING
+    // ============================================================
+    const RANK={normal:0,warning:1,danger:2};
+    const ST_TXT={
+      en:{normal:'🟢 Normal',warning:'🟡 Warning',danger:'🔴 Danger'},
+      ms:{normal:'🟢 Normal',warning:'🟡 Amaran',danger:'🔴 Bahaya'},
+      zh:{normal:'🟢 正常',warning:'🟡 警告',danger:'🔴 危险'},
+      ta:{normal:'🟢 இயல்பு',warning:'🟡 எச்சரிக்கை',danger:'🔴 ஆபத்து'}
+    };
+    const PILL_CLS={
+      normal:['bg-green-500/15','text-green-700','dark:text-green-400','border-green-500/30'],
+      warning:['bg-amber-500/15','text-amber-700','dark:text-amber-400','border-amber-500/30'],
+      danger:['bg-red-500/15','text-red-700','dark:text-red-400','border-red-500/30']
+    };
+    const NUM_CLS={normal:['text-green-600','dark:text-green-400'],warning:['text-amber-600','dark:text-amber-400'],danger:['text-red-600','dark:text-red-400']};
+    function paint(el, map, key){
+      Object.keys(map).forEach(k=>el.classList.remove.apply(el.classList,map[k]));
+      el.classList.add.apply(el.classList,map[key]);
+    }
+
+    // ============================================================
+    // RENDER — KPI / MAP / ALERT
+    // ============================================================
+    function renderAll(){
+      ensureStationMarkers();
+      const st = selectedStation();
+      const d = liveData[st.id] || { level: 0, rain:0, trend:0 };
+      const lang = curLang();
+      const lvl = d.level, stat = statusFor(st, lvl), max = st.danger*1.2;
+
+      // KPI
+      $('station-label').textContent = i18n[lang][st.i18nKey];
+      $('lvl').textContent = lvl.toFixed(2); paint($('lvl'), NUM_CLS, stat);
+      ['pill','pill-m'].forEach(id=>{ $(id).textContent = ST_TXT[lang][stat]; paint($(id), PILL_CLS, stat); });
+      $('trend').textContent = (d.trend>=0?'↑ ':'↓ ') + Math.abs(d.trend).toFixed(2) + ' m';
+      $('trend').className = (d.trend>=0?'text-red-600 dark:text-red-400':'text-green-600 dark:text-green-400') + ' text-sm mb-6';
+
+      // Gauge
+      $('g-green').style.width = (st.warn/max*100)+'%';
+      $('g-amber').style.width = ((st.danger-st.warn)/max*100)+'%';
+      $('g-mark').style.left = 'calc('+(Math.min(lvl/max,1)*100)+'% - 2px)';
+      $('g-lbl-warn').textContent = '🟡 '+st.warn.toFixed(2)+' m';
+      $('g-lbl-danger').textContent = '🔴 '+st.danger.toFixed(2)+' m';
+      $('b-warn').textContent = st.warn.toFixed(2)+' m';
+      $('b-danger').textContent = st.danger.toFixed(2)+' m';
+
+      // Map markers — color each by its own status
+      STATIONS.forEach(s=>{
+        const sd = liveData[s.id] || { level:0 };
+        const sStat = statusFor(s, sd.level);
+        const isSel = s.id===st.id;
+        stationMarkers[s.id].setStyle({ fillColor: STATUS_COLORS[sStat], radius: isSel?14:11, weight: isSel?3:2 });
+        stationMarkers[s.id].bindPopup(
+          '<b>'+i18n[lang][s.i18nKey]+'</b><br>'+
+          sd.level.toFixed(2)+' m · '+ST_TXT[lang][sStat]+
+          '<br><span style="font-size:11px;color:#888">'+(isSel?'(your selected sensor)':'Click to select')+'</span>'
+        );
+      });
+
+      checkAlert(st, lvl, stat);
+    }
+
+    // ============================================================
+    // ALERTS (per selected station)
+    // ============================================================
+    let alertCurrentlyVisible = false; // prevents double-triggering while looking at it
+
+    function checkAlert(st, level, stat) {
+      // If water is normal, hide if open, and reset flag
+      if (stat === 'normal') { 
+        if (alertCurrentlyVisible) closeAlert();
+        return; 
+      }
+      
+      // If already showing, don't trigger again
+      if (alertCurrentlyVisible) return;
+      
+      // Show immediately on page load or refresh
+      showAlert(st, stat, level);
+    }
+
+        function showAlert(st, stat, level) {
+      const T = i18n[curLang()], danger = stat === 'danger';
+      const box = $('alert-box');
+      const icon = $('alert-icon');
+      const bg = $('alert-bg');
+      
+      // Texts
+      $('alert-title').textContent = T[danger ? 'alert_danger_title' : 'alert_warn_title'];
+      $('alert-station').textContent = i18n[curLang()][st.i18nKey];
+      $('alert-body').textContent = T[danger ? 'alert_danger_body' : 'alert_warn_body'];
+      
+      // Big Level Number
+      $('alert-level').textContent = level.toFixed(2) + ' m';
+      $('alert-level').className = 'text-6xl font-black mb-2 tracking-tighter ' + (danger ? 'text-red-500' : 'text-amber-500');
+
+      // Reset base classes (Force dark mode background)
+      box.className = 'bg-white dark:bg-[#1B1D29] rounded-2xl shadow-2xl max-w-md w-full border-t-8 overflow-hidden relative alert-animate-in';
+      icon.className = 'text-4xl alert-icon-animate';
+      
+      // Apply Danger vs Warning styles
+      if (danger) {
+        box.classList.add('alert-danger-mode', 'border-red-500');
+        bg.className = 'absolute inset-0 z-0 pointer-events-none alert-bg-danger';
+        icon.textContent = '🚨';
+        icon.style.filter = 'drop-shadow(0 0 10px rgba(239,68,68,0.8))';
+      } else {
+        box.classList.add('alert-warning-mode', 'border-amber-500');
+        bg.className = 'absolute inset-0 z-0 pointer-events-none alert-bg-warning';
+        icon.textContent = '⚠️';
+        icon.style.filter = 'drop-shadow(0 0 10px rgba(245,158,11,0.8))';
+      }
+
+      $('alert-overlay').classList.remove('hidden');
+      alertCurrentlyVisible = true;
+    }
+
+    // ============================================================
+    // ANNOUNCEMENTS (unchanged)
+    // ============================================================
+    const DEFAULT_ANN=[
+      {id:1,severity:'emergency',date:'14/11/2026',text:{en:i18n.en.ann1,ms:i18n.ms.ann1,zh:i18n.zh.ann1,ta:i18n.ta.ann1}},
+      {id:2,severity:'warning',date:'14/11/2026',text:{en:i18n.en.ann2,ms:i18n.ms.ann2,zh:i18n.zh.ann2,ta:i18n.ta.ann2}}
+    ];
+    const NONE={en:'No current announcements.',ms:'Tiada pengumuman semasa.',zh:'目前没有公告。',ta:'தற்போது அறிவிப்புகள் இல்லை.'};
+    const SEV={ emergency:{cls:'bg-red-100 text-red-700 dark:bg-[#A3202F] dark:text-accent-dark',key:'tag_emergency'},
+                warning:{cls:'bg-amber-500/20 text-amber-700 dark:text-amber-400',key:'tag_warning'},
+                info:{cls:'bg-sky-500/20 text-sky-700 dark:text-sky-300',label:{en:'INFO',ms:'MAKLUMAN',zh:'通知',ta:'தகவல்'}} };
+    function loadAnn(){ try{const raw=localStorage.getItem('announcements'); if(raw) return JSON.parse(raw);}catch(e){} return DEFAULT_ANN; }
+    function renderAnnouncements(){
+      const lang=curLang(), T=i18n[lang], list=$('ann-list'); list.innerHTML='';
+      const items=loadAnn();
+      if(!items.length){ const p=document.createElement('p'); p.className='text-sm text-gray-500 dark:text-gray-400'; p.textContent=NONE[lang]; list.appendChild(p); return; }
+      items.forEach(a=>{
+        const sev=SEV[a.severity]||SEV.info;
+        const row=document.createElement('div'); row.className='py-4 first:pt-0 last:pb-0';
+        const tag=document.createElement('span'); tag.className='inline-block text-xs font-semibold px-2 py-1 rounded '+sev.cls;
+        tag.textContent = sev.key?T[sev.key]:sev.label[lang];
+        const msg=document.createElement('p'); msg.className='mt-2 font-medium';
+        msg.textContent=(a.text&&(a.text[lang]||a.text.en))||'';
+        const date=document.createElement('p'); date.className='text-xs text-gray-500 dark:text-gray-400 mt-1';
+        date.textContent='📅 '+a.date;
+        row.appendChild(tag); row.appendChild(msg); row.appendChild(date);
+        if(a.link||a.poster){
+          const btn=document.createElement('button'); btn.className='mt-3 bg-brand hover:bg-blue-500 text-white text-xs px-4 py-2 rounded-full';
+          btn.textContent=T.read_more; btn.onclick=()=>openAnn(a); row.appendChild(btn);
+        }
+        list.appendChild(row);
+      });
+    }
+    function openAnn(a){
+      const safeLink=/^https?:\/\//i.test(a.link||''), hasPoster=/^data:image\//.test(a.poster||'');
+      if(hasPoster){ const T=i18n[curLang()]; $('poster-img').src=a.poster;
+        const lk=$('poster-link'); lk.classList.toggle('hidden',!safeLink);
+        if(safeLink){ lk.href=a.link; lk.textContent=T.read_more; }
+        $('poster-close').textContent=T.alert_close; $('poster-overlay').classList.remove('hidden');
+      } else if(safeLink){ window.open(a.link,'_blank','noopener'); }
+    }
+    function closePoster(){ $('poster-overlay').classList.add('hidden'); }
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ closeAlert(); closePoster(); } });
+
+    // ============================================================
+    // EMERGENCY NUMBERS (unchanged)
+    // ============================================================
+    const DEF_NUMBERS=[{number:'999',key:'em1'},{number:'',key:'em2'},{number:'',key:'em3'}];
+    function renderEmergency(){
+      const S=getSettings(), T=i18n[curLang()], box=$('em-list'); box.innerHTML='';
+      const list=(S.numbers&&S.numbers.length?S.numbers:DEF_NUMBERS).filter(n=>String(n.number||'').trim());
+      list.forEach((n,i)=>{
+        const a=document.createElement('a'); a.href='tel:'+String(n.number).replace(/[^0-9+]/g,'');
+        a.className='block bg-red-50 dark:bg-white/5 hover:bg-red-100 dark:hover:bg-white/10 border border-red-100 dark:border-white/10 p-3 rounded-lg transition';
+        const p=document.createElement('p'); p.className='text-red-700 dark:text-red-300 font-bold '+(i===0?'text-2xl':'text-xl');
+        p.textContent='📞 '+n.number;
+        const q=document.createElement('p'); q.className='text-gray-500 dark:text-gray-400 text-xs';
+        q.textContent=n.name||(n.key?T[n.key]:'')||'';
+        a.appendChild(p); a.appendChild(q); box.appendChild(a);
+      });
+    }
+
+    // ============================================================
+    // THEME
+    // ============================================================
+    function setTheme(t){
+      document.documentElement.classList.toggle('dark', t==='dark');
+      $('btn-theme').textContent = t==='dark'?'☀️':'🌙';
+      try{localStorage.setItem('theme',t);}catch(e){}
+    }
+    function toggleTheme(){ setTheme(document.documentElement.classList.contains('dark')?'light':'dark'); }
+
+        function closeAlert() { 
+      const overlay = document.getElementById('alert-overlay');
+      if (overlay) {
+        overlay.classList.add('hidden'); 
+        overlay.style.display = 'none'; // Force it to hide
+      }
+      alertCurrentlyVisible = false;
+    }
+
+    function goShelter() { 
+      closeAlert(); 
+      document.getElementById('map-shelter').scrollIntoView({behavior: 'smooth', block: 'center'}); 
+    }
+
+        // ============================================================
+    // BOOT
+    // ============================================================
+    (async function boot(){
+      const savedLang=(()=>{try{return localStorage.getItem('lang')||'en';}catch(e){return 'en';}})();
+      document.documentElement.lang = savedLang;
+      setTheme(document.documentElement.classList.contains('dark')?'dark':'light');
+      renderPicker();
+      setLang(savedLang);
+      
+      liveData = await fetchStations();    // <-- real API goes here
+      renderAll();
+      renderEmergency();
+      renderShelters();
+      renderAnnouncements();
+      
+      // poll every 60s (remove when using a real push/websocket)
+      setInterval(async ()=>{ liveData = await fetchStations(); renderAll(); }, 60000);
+
+      // MOVE THE EVENT LISTENERS INSIDE HERE
+      // This guarantees the buttons exist in the HTML before we try to attach clicks to them.
+      document.getElementById('btn-close-alert').addEventListener('click', function(e) {
+        e.preventDefault();
+        closeAlert();
+      });
+      
+      document.getElementById('btn-go-shelter').addEventListener('click', function(e) {
+        e.preventDefault();
+        goShelter();
+      });
+    })();
+
+    window.addEventListener('storage', ()=>{ renderEmergency(); renderShelters(); renderAnnouncements(); });
+  </script>
+</body>
+</html>
